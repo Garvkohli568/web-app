@@ -8,24 +8,24 @@ describe('web app', () => {
     expect(res.body.status).toBe('OK');
   });
 
-  test('login -> dashboard (admin/123)', async () => {
+  test('login -> dashboard (Garvkohli568/123)', async () => {
     const agent = request.agent(app); // keep cookies (session)
     const login = await agent
       .post('/login')
-      .type('form')                         // <— important
-      .send({ username: 'admin', password: '123' });
-    expect(login.status).toBe(302);         // redirected after login
+      .type('form')
+      .send({ username: 'Garvkohli568', password: '123' });
+    expect(login.status).toBe(302);               // redirected after login
 
     const dash = await agent.get('/dashboard');
     expect(dash.status).toBe(200);
-    expect(dash.text).toMatch(/Hello, admin/);
+    expect(dash.text).toMatch(/Hello,\s*Garvkohli568/);
   });
 
   test('rejects bad password', async () => {
     const res = await request(app)
       .post('/login')
-      .type('form')                         // <— important
-      .send({ username: 'admin', password: 'bad' });
+      .type('form')
+      .send({ username: 'Garvkohli568', password: 'bad' });
     expect(res.status).toBe(401);
     expect(res.text).toMatch(/Invalid username or password/i);
   });

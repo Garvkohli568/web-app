@@ -2,24 +2,27 @@ pipeline {
   agent any
   options { timestamps() }
 
+  // You already added NodeJS tool in Jenkins (Manage Jenkins > Tools) as "node-lts"
+  tools { nodejs 'node-lts' }
+
   stages {
     stage('Checkout') { steps { checkout scm } }
 
     stage('Build') {
       steps {
-        // Clean, reproducible install
-        powershell 'npm ci'
+        // npm is available via the NodeJS tool
+        powershell 'node -v; npm -v; npm ci'
       }
     }
 
     stage('Test') {
       steps {
-        // Run Jest in CI mode (no watch, proper exit codes)
-        powershell 'npm run test:ci'
+        // Run default script and pass --ci to Jest
+        powershell 'npm test -- --ci'
       }
     }
 
-    // TEMP "deploy" without Docker: start Node, hit /health, then stop it
+    // TEMP deploy without Docker: start server, hit /health, stop
     stage('Deploy (temp, no Docker)') {
       steps {
         powershell '''

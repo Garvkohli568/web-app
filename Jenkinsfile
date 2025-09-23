@@ -1,68 +1,65 @@
 pipeline {
   agent any
   options { timestamps() }
-  tools { nodejs 'node-20' }          // Manage Jenkins → Tools → NodeJS → name must be 'node-20'
 
+  // Use the NodeJS tool you defined in Jenkins (Manage Jenkins → Tools).
+  // If your tool has a different name, change 'node-20' below.
   environment {
-    CI   = 'true'
-    PORT = '3000'                      // change if 3000 is busy on the agent
+    NODEJS_HOME = tool name: 'node-20', type: 'org.jenkinsci.plugins.tools.nodejs.NodeJSInstallation'
   }
 
   stages {
+
     stage('Checkout') {
       steps {
-        deleteDir()                    // wipe workspace each run
         checkout scm
       }
     }
 
     stage('Tool Install') {
       steps {
-        bat 'node -v & npm -v'         // prove Node/npm are on PATH
+        // Put Node & npm on PATH for this build
+        script {
+          env.PATH = "${env.NODEJS_HOME}\\bin;${env.PATH}"
+        }
+        bat 'node -v & npm -v'
       }
     }
 
     stage('Build') {
       steps {
-        bat 'npm ci'                   // clean, reproducible install
+        // Reproducible install (uses package-lock.json)
+        bat 'npm ci'
       }
     }
 
     stage('Test') {
       steps {
-        // allow pipeline to pass even if no tests are present
-        bat 'npm run test:ci -- --passWithNoTests'
+        // Enforce tests: NO extra flags. This fails if zero tests are found or any test fails.
+        bat 'npm run test:ci'
       }
     }
 
-    // Temp "deploy": start app, hit /health, stop it (no Docker)
     stage('Deploy (temp, no Docker)') {
       steps {
-        powershell '''
-          $ErrorActionPreference = "Stop"
+        // Start the app, hit /health, then stop it. (CI-friendly, no interactive windows)
+        bat '''
+          if not exist server.js (
+            echo server.js not found at workspace root: %cd%
+            exit /b 1
+          )
 
-          if (!(Test-Path "$env:WORKSPACE\\server.js")) {
-            throw "server.js not found at workspace root: $env:WORKSPACE"
-          }
+          rem Start Node in background
+          start "" /b node server.js
 
-          # Start server in background
-          $p = Start-Process node -ArgumentList "server.js" -WorkingDirectory "$env:WORKSPACE" -PassThru -WindowStyle Hidden
-          try {
-            # Wait up to ~15s for the server
-            for ($i=0; $i -lt 15; $i++) {
-              try {
-                $r = Invoke-RestMethod "http://localhost:$env:PORT/health"
-                if ($r) { break }
-              } catch {
-                Start-Sleep -Seconds 1
-              }
-            }
-            $r = Invoke-RestMethod "http://localhost:$env:PORT/health"
-            $r | ConvertTo-Json
-          }
-          finally {
-            Stop-Process -Id $p.Id -Force
-          }
+          rem Give the server a moment to boot
+          timeout /t 2 >NUL
+
+          rem Health check (expects {"status":"OK"...})
+          powershell -Command "(Invoke-RestMethod http://localhost:3000/health | ConvertTo-Json)"
+
+          rem Stop node to clean up
+          taskkill /im node.exe /f >NUL 2>&1
         '''
       }
     }
@@ -70,8 +67,8 @@ pipeline {
 
   post {
     always {
-      archiveArtifacts artifacts: 'Dockerfile,server.js,Views/**,Tests/**,package*.json', onlyIfSuccessful: false
-      cleanWs()
+      // Keep key files and (if enabled) coverage for the report
+      archiveArtifacts artifacts: 'Dockerfile,server.js,Views/**,Tests/**,package*.json,coverage/**', onlyIfSuccessful: false
     }
   }
 }

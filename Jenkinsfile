@@ -1,47 +1,69 @@
 pipeline {
   agent any
   options { timestamps() }
+  tools { nodejs 'node-20' }          // Manage Jenkins → Tools → NodeJS → name must be 'node-20'
+
+  environment {
+    CI   = 'true'
+    PORT = '3000'                      // change if 3000 is busy on the agent
+  }
 
   stages {
     stage('Checkout') {
-      steps { checkout scm }
+      steps {
+        deleteDir()                    // wipe workspace each run
+        checkout scm
+      }
     }
 
     stage('Tool Install') {
       steps {
-        withEnv(["PATH+NODE=${tool 'node-20'}"]) {
-          bat 'node -v & npm -v'
-        }
+        bat 'node -v & npm -v'         // prove Node/npm are on PATH
       }
     }
 
     stage('Build') {
       steps {
-        withEnv(["PATH+NODE=${tool 'node-20'}"]) {
-          bat 'npm ci'
-        }
+        bat 'npm ci'                   // clean, reproducible install
       }
     }
 
     stage('Test') {
       steps {
-        withEnv(["PATH+NODE=${tool 'node-20'}"]) {
-          // Allow empty test suites to pass
-          bat 'npm run test:ci -- --passWithNoTests'
-        }
+        // allow pipeline to pass even if no tests are present
+        bat 'npm run test:ci -- --passWithNoTests'
       }
     }
 
+    // Temp "deploy": start app, hit /health, stop it (no Docker)
     stage('Deploy (temp, no Docker)') {
       steps {
-        withEnv(["PATH+NODE=${tool 'node-20'}", "PORT=3000"]) {
-          bat '''
-            start "" /b node server.js
-            timeout /t 2 >NUL
-            powershell -Command "(Invoke-RestMethod http://localhost:%PORT%/health | ConvertTo-Json)"
-            taskkill /im node.exe /f >NUL 2>&1
-          '''
-        }
+        powershell '''
+          $ErrorActionPreference = "Stop"
+
+          if (!(Test-Path "$env:WORKSPACE\\server.js")) {
+            throw "server.js not found at workspace root: $env:WORKSPACE"
+          }
+
+          # Start server in background
+          $p = Start-Process node -ArgumentList "server.js" -WorkingDirectory "$env:WORKSPACE" -PassThru -WindowStyle Hidden
+          try {
+            # Wait up to ~15s for the server
+            for ($i=0; $i -lt 15; $i++) {
+              try {
+                $r = Invoke-RestMethod "http://localhost:$env:PORT/health"
+                if ($r) { break }
+              } catch {
+                Start-Sleep -Seconds 1
+              }
+            }
+            $r = Invoke-RestMethod "http://localhost:$env:PORT/health"
+            $r | ConvertTo-Json
+          }
+          finally {
+            Stop-Process -Id $p.Id -Force
+          }
+        '''
       }
     }
   }
@@ -49,6 +71,7 @@ pipeline {
   post {
     always {
       archiveArtifacts artifacts: 'Dockerfile,server.js,Views/**,Tests/**,package*.json', onlyIfSuccessful: false
+      cleanWs()
     }
   }
 }

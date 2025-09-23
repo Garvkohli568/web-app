@@ -1,22 +1,23 @@
 pipeline {
   agent any
   options { timestamps() }
+  tools { nodejs 'node-20' }          // Jenkins → Manage Jenkins → Tools → NodeJS installations (name must match)
 
   environment {
-    // Change 'node-20' if your configured Node tool has a different name
-    NODEJS_HOME = tool name: 'node-20', type: 'org.jenkinsci.plugins.tools.nodejs.NodeJSInstallation'
+    CI   = 'true'
+    PORT = '3000'
   }
 
   stages {
     stage('Checkout') {
       steps {
+        deleteDir()                    // clean workspace each run
         checkout scm
       }
     }
 
     stage('Tool Install') {
       steps {
-        script { env.PATH = "${env.NODEJS_HOME}\\bin;${env.PATH}" }
         bat 'node -v & npm -v'
       }
     }
@@ -29,38 +30,43 @@ pipeline {
 
     stage('Test') {
       steps {
-        // Enforce tests (fails if none or failing)
+        // now STRICT: will fail if tests fail or are missing
         bat 'npm run test:ci'
       }
     }
 
+    // Temporary deploy check (no Docker): start app, hit /health, stop
     stage('Deploy (temp, no Docker)') {
       steps {
-        bat '''
-          if not exist server.js (
-            echo server.js not found at workspace root: %cd%
-            exit /b 1
-          )
-          rem Start the app
-          start "" /b node server.js
-          timeout /t 2 >NUL
-          rem Health check should return {"status":"OK"}
-          powershell -Command "(Invoke-RestMethod http://localhost:3000/health | ConvertTo-Json)"
-          rem Stop the app
-          taskkill /im node.exe /f >NUL 2>&1
+        powershell '''
+          $ErrorActionPreference = "Stop"
+
+          if (!(Test-Path "$env:WORKSPACE\\server.js")) {
+            throw "server.js not found at workspace root: $env:WORKSPACE"
+          }
+
+          $p = Start-Process node -ArgumentList "server.js" -WorkingDirectory "$env:WORKSPACE" -PassThru -WindowStyle Hidden
+          try {
+            for ($i=0; $i -lt 15; $i++) {
+              try {
+                $r = Invoke-RestMethod "http://localhost:$env:PORT/health"
+                if ($r) { break }
+              } catch { Start-Sleep -Seconds 1 }
+            }
+            $r = Invoke-RestMethod "http://localhost:$env:PORT/health"
+            $r | ConvertTo-Json
+          } finally {
+            Stop-Process -Id $p.Id -Force
+          }
         '''
       }
     }
+  }
 
-    stage('Archive Artifacts') {
-      steps {
-        archiveArtifacts(
-          artifacts: 'Dockerfile,server.js,Views/**,Tests/**,package*.json,coverage/**',
-          allowEmptyArchive: true,
-          onlyIfSuccessful: false,
-          fingerprint: true
-        )
-      }
+  post {
+    always {
+      archiveArtifacts artifacts: 'Dockerfile,server.js,Views/**,Tests/**,package*.json', onlyIfSuccessful: false
+      cleanWs()
     }
   }
 }

@@ -9,7 +9,6 @@ pipeline {
 
     stage('Tool Install') {
       steps {
-        // Use the preconfigured Node tool "node-20"
         withEnv(["PATH+NODE=${tool 'node-20'}"]) {
           bat 'node -v & npm -v'
         }
@@ -27,13 +26,12 @@ pipeline {
     stage('Test') {
       steps {
         withEnv(["PATH+NODE=${tool 'node-20'}"]) {
-          // ← allow empty test suites to pass
+          // Allow empty test suites to pass
           bat 'npm run test:ci -- --passWithNoTests'
         }
       }
     }
 
-    // Simple smoke "deploy" without Docker: start, hit /health, stop
     stage('Deploy (temp, no Docker)') {
       steps {
         withEnv(["PATH+NODE=${tool 'node-20'}", "PORT=3000"]) {

@@ -1,7 +1,6 @@
-<!doctype html>
-<html>
-  <body>
-    <h1>Hello, <%= user %></h1>
-    <p><a href="/logout">Logout</a></p>
-  </body>
-</html>
+powershell -NoProfile -Command "@'
+<!doctype html><html><body>
+  <h1>Hello, <%= user %></h1>
+  <a href="/logout">Logout</a>
+</body></html>
+'@ | Set-Content -Encoding UTF8 .\Views\dashboard.ejs"

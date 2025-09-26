@@ -1,18 +1,12 @@
-<!doctype html>
-<html>
-  <body>
-    <h1>Login</h1>
+powershell -NoProfile -Command "@'
+<!doctype html><html><body>
+  <h1>Login</h1>
+  <% if (error) { %><p style="color:red;"><%= error %></p><% } %>
+  <form method="post" action="/login">
+    <input name="username" placeholder="username">
+    <input name="password" type="password" placeholder="password">
+    <button type="submit">Login</button>
+  </form>
+</body></html>
+'@ | Set-Content -Encoding UTF8 .\Views\login.ejs"
 
-    <% if (error) { %>
-      <p style="color:red;"><%= error %></p>
-    <% } %>
-
-    <form method="post" action="/login">
-      <input name="username" placeholder="username">
-      <input name="password" type="password" placeholder="password">
-      <button type="submit">Login</button>
-    </form>
-
-    <p><a href="/">Back</a></p>
-  </body>
-</html>
